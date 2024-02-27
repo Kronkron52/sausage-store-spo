@@ -1,0 +1,17 @@
+[Unit]
+Description=Sausage Store Backend
+After=network.target
+
+[Service]
+User=backend
+Group=backend
+Environment="REPORT_PATH=/var/sausage-store/reports"
+Environment="LOG_PATH=/var/sausage-store/logs"
+EnvironmentFile=/opt/sausage-store/backend/backend.env 
+WorkingDirectory=/opt/sausage-store/backend
+Restart=always
+ExecStart=/usr/lib/jvm/java-16-openjdk-amd64/bin/java -jar /opt/sausage-store/backend/target/sausage-store.jar --spring.flyway.enabled=false --spring.datasource.url=jdbc:postgresql://${PSQL_HOST}:${PSQL_PORT}/${PSQL_DBNAME} --spring.datasource.username=${PSQL_ADMIN} --spring.datasource.password=${PSQL_PASSWORD} --spring.data.mongodb.uri=mongodb://${MONGO_USER}:${MONGO_PASSWORD}@${MONGO_HOST}:27018/${MONGO_DATABASE}?tls=true
+SuccessExitStatus=143
+
+[Install]
+WantedBy=multi-user.target 

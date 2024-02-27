@@ -1,0 +1,4 @@
+.idea/
+.vscode/
+YandexInternalRootCA.crt
+nginx.conf

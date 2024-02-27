@@ -1,0 +1,101 @@
+---
+variables:
+  VERSION: 1.0.${CI_PIPELINE_ID}
+
+stages:
+  - build
+  - test
+  - release
+  - notify
+  # - deploy
+
+include:
+  - project: 'templates/ci'
+    file: 'DockerInDockerTemplate.yml'
+
+build-backend-report:
+  stage: build
+  image: docker:20.10.12-dind-rootless
+  before_script:
+    - until docker info; do sleep 1; done
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - cd backend-report
+    - docker build --build-arg VERSION=$VERSION --tag $CI_REGISTRY_IMAGE/sausage-backend-report:$CI_COMMIT_SHA .
+    - docker push $CI_REGISTRY_IMAGE/sausage-backend-report:$CI_COMMIT_SHA
+
+
+sonarqube-backend-report-sast:
+  stage: test
+  image: sonarsource/sonar-scanner-cli:latest
+  variables:
+    SONAR_USER_HOME: ${CI_PROJECT_DIR}/backend-report/.sonar
+  script:
+    - cd backend-report
+    - mkdir -p .sonar/cache
+    - sonar-scanner -Dsonar.host.url=$SONARQUBE_URL
+      -Dsonar.projectKey=$SONAR_PROJECT_KEY_BACK_REP
+      -Dsonar.login=$SONAR_LOGIN_BACKEND_REPORT -Dsonar.qualitygate.wait=true
+      -Dsonar.projectName="21_EduardYurchikhin_backend-report"
+      -Dsonar.python.version=3
+  artifacts:
+    paths:
+      - backend-report/.sonar
+      - backend-report/.sonar/cache
+  cache:
+    paths:
+      - backend-report/.sonar/cache
+  needs:
+    - build-backend-report
+
+upload-backend-report-release:
+  stage: release
+  image: docker:20.10.12-dind-rootless
+  needs:
+    - build-backend-report
+  before_script:
+    - until docker info; do sleep 1; done
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - cd backend-report
+    - docker pull $CI_REGISTRY_IMAGE/sausage-backend-report:$CI_COMMIT_SHA
+    - docker tag $CI_REGISTRY_IMAGE/sausage-backend-report:$CI_COMMIT_SHA $CI_REGISTRY_IMAGE/sausage-backend-report:latest
+    - docker push $CI_REGISTRY_IMAGE/sausage-backend-report:latest
+
+
+# deploy:
+#   stage: deploy
+#   image: vault:1.13.3
+#   before_script:
+#     - apk add openssh-client bash
+#     - eval $(ssh-agent -s)
+#     - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+#     - mkdir -p ~/.ssh
+#     - chmod 600 ~/.ssh
+#     - echo "$SSH_KNOWN_HOSTS" >> ~/.ssh/known_hosts
+#     - chmod 644 ~/.ssh/known_hosts
+#     - scp ./docker-compose.yml ${DEV_USER}@${DEV_HOST}:/home/${DEV_USER}/docker-compose.yml
+#   script:
+#   - export VAULT_TOKEN="$(vault write -field=token auth/jwt/login role=sausage-store jwt=$CI_JOB_JWT)"
+#   - ssh ${DEV_USER}@${DEV_HOST} "export "VERSION=${VERSION}"; export "SPRING_DATA_MONGODB_URI=$(vault kv get -field=spring.data.mongodb.uri secret/sausage-store)";setsid /bin/bash -s " < ./backend-report/docker-rep_comp_deploy.sh
+#   environment:
+#     name: backend-report
+#     url: http://std-021-09.praktikum-services.tech/#
+
+
+telegram-notification-backend:
+  stage: notify
+  only:
+    changes:
+      - backend-report/*
+    variables:
+      - $CI_COMMIT_MESSAGE =~ /send notification/
+  script:
+    - 'curl -X POST -H "Content-type: application/json" --data "{\"chat_id\":
+      \"-1001626584285\", \"text\": \"Эдуард Юрчихин собрал Back скачать можно
+      тут
+      $CI_PROJECT_URL/-/jobs/artifacts/$CI_COMMIT_SHA/download?job=build-backend-report.\"
+      }"
+      "https://api.telegram.org/bot5933756043:AAE8JLL5KIzgrNBeTP5e-1bkbJy4YRoeGjs/sendMessage"'
+  needs:
+    - build-backend-report

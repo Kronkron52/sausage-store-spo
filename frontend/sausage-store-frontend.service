@@ -1,0 +1,12 @@
+[Unit]
+Description=HTTP Server for Frontend
+After=network.target
+
+[Service]
+User=frontend
+WorkingDirectory=/opt/sausage-store/frontend
+ExecStart=/usr/bin/npx http-server ./dist/frontend/ -p 8081 
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
